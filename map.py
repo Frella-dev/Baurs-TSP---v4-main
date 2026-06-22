@@ -27,14 +27,12 @@ def create_popup(stop):
         "-"
     )
 
-    html = f"""
+    return f"""
     <b>{customer}</b><br>
     Town: {town}<br>
     Pending: {pending}<br>
     Priority: {priority}
     """
-
-    return html
 
 
 def add_customer_marker(
@@ -56,24 +54,24 @@ def add_customer_marker(
         marker_color(stop)
     )
 
-    popup = create_popup(
-        stop
-    )
-
     tooltip = stop.get(
         "Customer name",
         "Customer"
     )
 
-    if sequence:
+    if sequence is not None:
 
         tooltip = (
             f"{sequence}. "
             f"{tooltip}"
         )
 
+    popup = create_popup(
+        stop
+    )
+
     folium.Marker(
-        [lat, lon],
+        location=[lat, lon],
         popup=popup,
         tooltip=tooltip,
         icon=folium.Icon(
@@ -84,7 +82,8 @@ def add_customer_marker(
 
 def add_route_line(
     m,
-    coordinates
+    coordinates,
+    color="blue"
 ):
 
     if len(coordinates) < 2:
@@ -92,15 +91,14 @@ def add_route_line(
 
     folium.PolyLine(
         coordinates,
-        weight=5,
-        opacity=0.8
+        weight=4,
+        opacity=0.8,
+        color=color
     ).add_to(m)
 
 
 def create_day_map(
-    day,
-    office_lat=None,
-    office_lon=None
+    day
 ):
 
     if len(day) == 0:
@@ -124,7 +122,7 @@ def create_day_map(
                 first["Longitude"]
             )
         ],
-        zoom_start=9
+        zoom_start=10
     )
 
     coordinates = []
@@ -153,50 +151,15 @@ def create_day_map(
 
     add_route_line(
         m,
-        coordinates
+        coordinates,
+        "blue"
     )
-
-    return m
-
-
-def create_area_map(
-    customers
-):
-
-    if len(customers) == 0:
-
-        return folium.Map(
-            location=[
-                7.5,
-                80.7
-            ],
-            zoom_start=7
-        )
-
-    first = customers[0]
-
-    m = folium.Map(
-        location=[
-            first["Latitude"],
-            first["Longitude"]
-        ],
-        zoom_start=10
-    )
-
-    for stop in customers:
-
-        add_customer_marker(
-            m,
-            stop
-        )
 
     return m
 
 
 def create_full_plan_map(
-    days,
-    office_lat=None,
-    office_lon=None
+    days
 ):
 
     m = folium.Map(
@@ -214,7 +177,9 @@ def create_full_plan_map(
         "purple",
         "orange",
         "darkred",
-        "cadetblue"
+        "cadetblue",
+        "darkgreen",
+        "darkpurple"
     ]
 
     for day_no, day in enumerate(
@@ -222,9 +187,16 @@ def create_full_plan_map(
         start=1
     ):
 
-        coords = []
+        coordinates = []
 
-        for stop in day:
+        route_color = colors[
+            day_no % len(colors)
+        ]
+
+        for idx, stop in enumerate(
+            day,
+            start=1
+        ):
 
             lat = float(
                 stop["Latitude"]
@@ -234,34 +206,30 @@ def create_full_plan_map(
                 stop["Longitude"]
             )
 
-            coords.append(
+            coordinates.append(
                 [lat, lon]
             )
 
             popup = f"""
-            Day {day_no}<br>
-            {stop['Customer name']}<br>
-            Pending:
+            <b>Day {day_no}</b><br>
+            Stop {idx}<br>
+            {stop.get('Customer name')}<br>
+            {stop.get('Town')}<br>
             {stop.get('Pending Visit')}
             """
 
             folium.CircleMarker(
-                [lat, lon],
+                location=[lat, lon],
                 radius=6,
                 popup=popup,
-                color=colors[
-                    day_no % len(colors)
-                ]
+                color=route_color,
+                fill=True
             ).add_to(m)
 
-        if len(coords) > 1:
-
-            folium.PolyLine(
-                coords,
-                weight=3,
-                color=colors[
-                    day_no % len(colors)
-                ]
-            ).add_to(m)
+        add_route_line(
+            m,
+            coordinates,
+            route_color
+        )
 
     return m
