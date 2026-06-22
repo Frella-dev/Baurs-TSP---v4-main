@@ -29,13 +29,14 @@ from googlemaps import (
 
 
 st.set_page_config(
-    page_title="Pharma Route Planner V5",
+    page_title="Pharma Route Planner ORS",
     layout="wide"
 )
 
 st.title(
-    "Pharma Route Planner V5"
+    "Pharma Route Planner ORS"
 )
+
 
 if "days" not in st.session_state:
     st.session_state.days = None
@@ -43,6 +44,19 @@ if "days" not in st.session_state:
 if "generated" not in st.session_state:
     st.session_state.generated = False
 
+
+# ----------------------------
+# ORS API KEY
+# ----------------------------
+
+ors_api_key = st.text_input(
+    "OpenRouteService API Key",
+    type="password"
+)
+
+# ----------------------------
+# SHEET URL
+# ----------------------------
 
 sheet_url = st.text_input(
     "Google Sheet URL"
@@ -64,7 +78,6 @@ daily_limit = st.number_input(
 )
 
 selected_area = None
-
 
 if sheet_url:
 
@@ -91,12 +104,23 @@ if sheet_url:
             str(e)
         )
 
+# ----------------------------
+# GENERATE PLAN
+# ----------------------------
 
 if st.button(
     "Generate Route Plan"
 ):
 
     try:
+
+        if not ors_api_key:
+
+            st.error(
+                "Please enter OpenRouteService API Key"
+            )
+
+            st.stop()
 
         df = load_sheet(
             sheet_url
@@ -106,40 +130,36 @@ if st.button(
             df
         )
 
-        if planning_mode == "Area":
-
-            days = create_plan(
-                df,
-                mode="area",
-                area=selected_area,
-                daily_limit=daily_limit
-            )
-
-        else:
-
-            days = create_plan(
-                df,
-                mode="nationwide",
-                daily_limit=daily_limit
-            )
+        days = create_plan(
+            df=df,
+            ors_api_key=ors_api_key,
+            mode=planning_mode.lower(),
+            area=selected_area,
+            daily_limit=daily_limit
+        )
 
         st.session_state.days = days
         st.session_state.generated = True
 
         st.success(
-            f"{len(days)} Day Route Plan Generated"
+            f"{len(days)} day(s) generated"
         )
 
     except Exception as e:
 
         import traceback
 
-        st.error(str(e))
+        st.error(
+            str(e)
+        )
 
         st.code(
             traceback.format_exc()
         )
 
+# ----------------------------
+# RESULTS
+# ----------------------------
 
 if st.session_state.generated:
 
@@ -174,7 +194,7 @@ if st.session_state.generated:
             full_map,
             width=1400,
             height=700,
-            key="full_route_map"
+            key="full_map"
         )
 
     st.divider()
@@ -192,7 +212,7 @@ if st.session_state.generated:
             day
         )
 
-        columns = []
+        display_cols = []
 
         for col in [
             "Customer name",
@@ -205,51 +225,34 @@ if st.session_state.generated:
 
             if col in day_df.columns:
 
-                columns.append(
+                display_cols.append(
                     col
                 )
 
         st.dataframe(
             day_df[
-                columns
+                display_cols
             ],
             use_container_width=True
         )
 
-        route_parts = (
-            build_day_route_urls(
-                day
-            )
+        routes = build_day_route_urls(
+            day
         )
 
-        if len(route_parts) == 1:
+        for route in routes:
 
             st.link_button(
-                f"Open Day {day_no} Route",
-                route_parts[0]["url"]
+                (
+                    f"🗺 Route {route['part']} "
+                    f"({route['start']} - {route['end']})"
+                ),
+                route["url"]
             )
-
-        else:
-
-            st.info(
-                f"Day {day_no} split into "
-                f"{len(route_parts)} Google Maps routes"
-            )
-
-            for part in route_parts:
-
-                st.link_button(
-                    (
-                        f"Day {day_no} "
-                        f"Route {part['part']} "
-                        f"({part['start']} - {part['end']})"
-                    ),
-                    part["url"]
-                )
 
         show_map = st.checkbox(
             f"Show Map Day {day_no}",
-            key=f"day_map_{day_no}"
+            key=f"map_{day_no}"
         )
 
         if show_map:
@@ -287,24 +290,24 @@ if st.session_state.generated:
         priority_df
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
 
-    col1.metric(
+    c1.metric(
         "Visit 1",
         summary["Visit1"]
     )
 
-    col2.metric(
+    c2.metric(
         "Visit 2",
         summary["Visit2"]
     )
 
-    col3.metric(
+    c3.metric(
         "Visit 3",
         summary["Visit3"]
     )
 
-    col4.metric(
+    c4.metric(
         "Completed",
         summary["Completed"]
     )
