@@ -1,347 +1,420 @@
+import math
 import pandas as pd
 
-from sklearn.cluster import KMeans
-
-from priority import (
-    prepare_customers,
-    get_pending_customers
+from ortools.constraint_solver import (
+    routing_enums_pb2,
+    pywrapcp
 )
 
-from route_engine import (
-    build_master_route,
-    split_route_by_distance,
-    route_summary,
-    haversine
-)
 
-OFFICE_LAT = 6.8275814230546725
-OFFICE_LON = 79.95698659415302
-
-
-def cluster_center(cluster_df):
-
-    return (
-        cluster_df["Latitude"].mean(),
-        cluster_df["Longitude"].mean()
-    )
-
-
-def order_clusters(
-    df,
-    cluster_column="Cluster"
+def haversine(
+    lat1,
+    lon1,
+    lat2,
+    lon2
 ):
 
-    clusters = []
+    R = 6371
 
-    current_lat = OFFICE_LAT
-    current_lon = OFFICE_LON
+    lat1 = math.radians(float(lat1))
+    lon1 = math.radians(float(lon1))
+    lat2 = math.radians(float(lat2))
+    lon2 = math.radians(float(lon2))
 
-    remaining = list(
-        df[cluster_column].unique()
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = (
+        math.sin(dlat / 2) ** 2
+        +
+        math.cos(lat1)
+        *
+        math.cos(lat2)
+        *
+        math.sin(dlon / 2) ** 2
     )
 
-    while remaining:
+    c = 2 * math.atan2(
+        math.sqrt(a),
+        math.sqrt(1 - a)
+    )
 
-        nearest_cluster = None
-        nearest_distance = 999999
+    return R * c
 
-        for cluster in remaining:
 
-            cluster_df = df[
-                df[cluster_column] == cluster
-            ]
+def create_distance_matrix(df):
 
-            lat, lon = cluster_center(
-                cluster_df
-            )
+    records = df.to_dict(
+        "records"
+    )
+
+    matrix = []
+
+    for row1 in records:
+
+        row = []
+
+        for row2 in records:
 
             distance = haversine(
-                current_lat,
-                current_lon,
-                lat,
-                lon
+                row1["Latitude"],
+                row1["Longitude"],
+                row2["Latitude"],
+                row2["Longitude"]
             )
 
-            if distance < nearest_distance:
+            row.append(
+                int(distance * 1000)
+            )
 
-                nearest_distance = distance
-                nearest_cluster = cluster
+        matrix.append(row)
 
-        clusters.append(
-            nearest_cluster
+    return matrix
+
+
+def solve_tsp(df):
+
+    if len(df) <= 1:
+
+        return df.to_dict(
+            "records"
         )
 
-        cluster_df = df[
-            df[cluster_column]
-            == nearest_cluster
-        ]
+    distance_matrix = create_distance_matrix(
+        df
+    )
 
-        current_lat, current_lon = (
-            cluster_center(cluster_df)
-        )
-
-        remaining.remove(
-            nearest_cluster
-        )
-
-    return clusters
-
-
-def build_nationwide_plan(
-    df,
-    daily_limit=160
-):
-
-    df = prepare_customers(df)
-
-    df = get_pending_customers(df)
-
-    if len(df) == 0:
-        return []
-
-    coords = df[
-        [
-            "Latitude",
-            "Longitude"
-        ]
-    ].values
-
-    cluster_count = max(
+    manager = pywrapcp.RoutingIndexManager(
+        len(distance_matrix),
         1,
-        min(
-            len(df) // 15,
-            12
+        0
+    )
+
+    routing = pywrapcp.RoutingModel(
+        manager
+    )
+
+    def distance_callback(
+        from_index,
+        to_index
+    ):
+
+        from_node = manager.IndexToNode(
+            from_index
+        )
+
+        to_node = manager.IndexToNode(
+            to_index
+        )
+
+        return distance_matrix[
+            from_node
+        ][
+            to_node
+        ]
+
+    transit_callback_index = (
+        routing.RegisterTransitCallback(
+            distance_callback
         )
     )
 
-    kmeans = KMeans(
-        n_clusters=cluster_count,
-        random_state=42,
-        n_init=10
+    routing.SetArcCostEvaluatorOfAllVehicles(
+        transit_callback_index
     )
 
-    df["Cluster"] = kmeans.fit_predict(
-        coords
+    search_parameters = (
+        pywrapcp.DefaultRoutingSearchParameters()
     )
 
-    cluster_sequence = order_clusters(
+    search_parameters.first_solution_strategy = (
+        routing_enums_pb2.FirstSolutionStrategy
+        .PATH_CHEAPEST_ARC
+    )
+
+    solution = routing.SolveWithParameters(
+        search_parameters
+    )
+
+    if solution is None:
+
+        return df.to_dict(
+            "records"
+        )
+
+    records = df.to_dict(
+        "records"
+    )
+
+    route = []
+
+    index = routing.Start(
+        0
+    )
+
+    while not routing.IsEnd(
+        index
+    ):
+
+        node = manager.IndexToNode(
+            index
+        )
+
+        route.append(
+            records[node]
+        )
+
+        index = solution.Value(
+            routing.NextVar(index)
+        )
+
+    return route
+
+
+def build_master_route(
+    df,
+    start_lat=None,
+    start_lon=None
+):
+
+    return solve_tsp(
         df
     )
 
-    days = []
 
-    start_lat = OFFICE_LAT
-    start_lon = OFFICE_LON
-
-    for cluster in cluster_sequence:
-
-        cluster_df = df[
-            df["Cluster"] == cluster
-        ].copy()
-
-        cluster_df = cluster_df.sort_values(
-            "Priority",
-            ascending=False
-        )
-
-        route = build_master_route(
-            cluster_df,
-            start_lat,
-            start_lon
-        )
-
-        cluster_days = split_route_by_distance(
-            route,
-            daily_limit
-        )
-
-        days.extend(
-            cluster_days
-        )
-
-        if len(route) > 0:
-
-            start_lat = route[-1][
-                "Latitude"
-            ]
-
-            start_lon = route[-1][
-                "Longitude"
-            ]
-
-    return days
-
-
-def build_area_plan(
-    df,
-    area,
-    daily_limit=160
+def distance_between(
+    point_a,
+    point_b
 ):
 
-    df = prepare_customers(df)
-
-    df = get_pending_customers(df)
-
-    area_df = df[
-        df["Town"]
-        .astype(str)
-        .str.upper()
-        ==
-        str(area).upper()
-    ].copy()
-
-    if len(area_df) == 0:
-        return []
-
-    route = build_master_route(
-        area_df,
-        OFFICE_LAT,
-        OFFICE_LON
-    )
-
-    return split_route_by_distance(
-        route,
-        daily_limit
+    return haversine(
+        point_a["Latitude"],
+        point_a["Longitude"],
+        point_b["Latitude"],
+        point_b["Longitude"]
     )
 
 
-def inject_missed_visit1(
-    route_day,
-    all_customers,
-    radius_km=15
+def route_distance(
+    route
 ):
 
-    missed = all_customers[
-        all_customers[
-            "Pending Visit No"
-        ] == 1
-    ]
+    if len(route) <= 1:
 
-    additions = []
+        return 0
 
-    for stop in route_day:
+    total = 0
 
-        for _, customer in missed.iterrows():
+    for i in range(
+        len(route) - 1
+    ):
 
-            distance = haversine(
-                stop["Latitude"],
-                stop["Longitude"],
-                customer["Latitude"],
-                customer["Longitude"]
-            )
-
-            if distance <= radius_km:
-
-                additions.append(
-                    customer.to_dict()
-                )
-
-    unique = {}
-
-    for item in additions:
-
-        unique[
-            item["Customer name"]
-        ] = item
-
-    final = route_day.copy()
-
-    for item in unique.values():
-
-        exists = False
-
-        for stop in final:
-
-            if (
-                stop["Customer name"]
-                ==
-                item["Customer name"]
-            ):
-                exists = True
-                break
-
-        if not exists:
-
-            final.append(
-                item
-            )
-
-    return final
-
-
-def apply_missed_visit_logic(
-    days,
-    df,
-    radius_km=15
-):
-
-    enhanced = []
-
-    for day in days:
-
-        enhanced.append(
-            inject_missed_visit1(
-                day,
-                df,
-                radius_km
-            )
+        total += distance_between(
+            route[i],
+            route[i + 1]
         )
 
-    return enhanced
-
-
-def create_plan(
-    df,
-    mode="nationwide",
-    area=None,
-    daily_limit=160
-):
-
-    if mode == "area":
-
-        days = build_area_plan(
-            df,
-            area,
-            daily_limit
-        )
-
-    else:
-
-        days = build_nationwide_plan(
-            df,
-            daily_limit
-        )
-
-    df = prepare_customers(df)
-
-    days = apply_missed_visit_logic(
-        days,
-        df
+    return round(
+        total,
+        2
     )
 
-    return days
 
-
-def get_plan_summary(
+def merge_small_days(
     days
 ):
 
-    return route_summary(
+    if len(days) <= 1:
+
+        return days
+
+    result = []
+
+    for day in days:
+
+        if (
+            len(day) < 5
+            and
+            len(result) > 0
+        ):
+
+            result[-1].extend(
+                day
+            )
+
+        else:
+
+            result.append(
+                day
+            )
+
+    return result
+
+
+def split_route_by_distance(
+    route,
+    daily_limit=160
+):
+
+    days = []
+
+    current_day = []
+
+    current_distance = 0
+
+    previous = None
+
+    MAX_STOPS_PER_DAY = 10
+
+    for stop in route:
+
+        if previous is None:
+
+            distance = 0
+
+        else:
+
+            distance = distance_between(
+                previous,
+                stop
+            )
+
+        if (
+            (
+                current_distance
+                + distance
+            )
+            > daily_limit
+            and
+            len(current_day) > 0
+        ):
+
+            days.append(
+                current_day
+            )
+
+            current_day = []
+
+            current_distance = 0
+
+        if (
+            len(current_day)
+            >= MAX_STOPS_PER_DAY
+        ):
+
+            days.append(
+                current_day
+            )
+
+            current_day = []
+
+            current_distance = 0
+
+        current_day.append(
+            stop
+        )
+
+        current_distance += distance
+
+        previous = stop
+
+    if len(current_day) > 0:
+
+        days.append(
+            current_day
+        )
+
+    return merge_small_days(
         days
     )
 
 
-def get_day_stops(
-    days,
-    day_no
+def day_distance(
+    day
 ):
 
-    if day_no < 1:
-        return []
+    return route_distance(
+        day
+    )
 
-    if day_no > len(days):
-        return []
 
-    return days[
-        day_no - 1
-    ]
+def create_day_summary(
+    day
+):
+
+    visit1 = 0
+    visit2 = 0
+    visit3 = 0
+
+    for row in day:
+
+        pending = row.get(
+            "Pending Visit No",
+            999
+        )
+
+        if pending == 1:
+            visit1 += 1
+
+        elif pending == 2:
+            visit2 += 1
+
+        elif pending == 3:
+            visit3 += 1
+
+    return {
+        "stops": len(day),
+        "distance": round(
+            day_distance(day),
+            2
+        ),
+        "visit1": visit1,
+        "visit2": visit2,
+        "visit3": visit3
+    }
+
+
+def route_summary(
+    days
+):
+
+    result = []
+
+    for idx, day in enumerate(
+        days,
+        start=1
+    ):
+
+        summary = create_day_summary(
+            day
+        )
+
+        summary["day"] = idx
+
+        result.append(
+            summary
+        )
+
+    return pd.DataFrame(
+        result
+    )
+
+
+def get_last_stop(
+    day
+):
+
+    if len(day) == 0:
+        return None
+
+    return day[-1]
+
+
+def get_start_point(
+    day
+):
+
+    if len(day) == 0:
+        return None
+
+    return day[0]
