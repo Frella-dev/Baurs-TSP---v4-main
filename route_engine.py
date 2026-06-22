@@ -1,107 +1,133 @@
-import math
 import pandas as pd
+import requests
 
 
-def haversine(
-    lat1,
-    lon1,
-    lat2,
-    lon2
+ORS_MATRIX_URL = (
+    "https://api.openrouteservice.org/v2/matrix/driving-car"
+)
+
+
+def build_distance_matrix(
+    locations,
+    api_key
 ):
 
-    R = 6371
+    coordinates = []
 
-    lat1 = math.radians(float(lat1))
-    lon1 = math.radians(float(lon1))
-    lat2 = math.radians(float(lat2))
-    lon2 = math.radians(float(lon2))
+    for row in locations:
 
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
+        coordinates.append(
+            [
+                float(row["Longitude"]),
+                float(row["Latitude"])
+            ]
+        )
 
-    a = (
-        math.sin(dlat / 2) ** 2
-        +
-        math.cos(lat1)
-        *
-        math.cos(lat2)
-        *
-        math.sin(dlon / 2) ** 2
+    headers = {
+        "Authorization": api_key,
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "locations": coordinates,
+        "metrics": ["distance"]
+    }
+
+    response = requests.post(
+        ORS_MATRIX_URL,
+        json=payload,
+        headers=headers,
+        timeout=120
     )
 
-    c = 2 * math.atan2(
-        math.sqrt(a),
-        math.sqrt(1 - a)
-    )
+    response.raise_for_status()
 
-    return R * c
+    data = response.json()
+
+    return data["distances"]
 
 
-def distance_between(
-    point_a,
-    point_b
+def nearest_neighbor_route(
+    locations,
+    distance_matrix
 ):
 
-    return haversine(
-        point_a["Latitude"],
-        point_a["Longitude"],
-        point_b["Latitude"],
-        point_b["Longitude"]
+    if len(locations) <= 1:
+
+        return locations
+
+    remaining = list(
+        range(len(locations))
     )
+
+    route_indexes = []
+
+    current = 0
+
+    route_indexes.append(
+        current
+    )
+
+    remaining.remove(
+        current
+    )
+
+    while remaining:
+
+        next_stop = min(
+            remaining,
+            key=lambda x:
+            distance_matrix[current][x]
+        )
+
+        route_indexes.append(
+            next_stop
+        )
+
+        remaining.remove(
+            next_stop
+        )
+
+        current = next_stop
+
+    result = []
+
+    for idx in route_indexes:
+
+        result.append(
+            locations[idx]
+        )
+
+    return result
 
 
 def build_master_route(
     df,
-    start_lat,
-    start_lon
+    api_key
 ):
 
-    remaining = df.to_dict(
+    locations = df.to_dict(
         "records"
     )
 
-    route = []
+    if len(locations) <= 1:
 
-    current_lat = start_lat
-    current_lon = start_lon
+        return locations
 
-    while remaining:
+    matrix = build_distance_matrix(
+        locations,
+        api_key
+    )
 
-        nearest = min(
-            remaining,
-            key=lambda x: haversine(
-                current_lat,
-                current_lon,
-                x["Latitude"],
-                x["Longitude"]
-            )
-        )
-
-        route.append(
-            nearest
-        )
-
-        current_lat = nearest[
-            "Latitude"
-        ]
-
-        current_lon = nearest[
-            "Longitude"
-        ]
-
-        remaining.remove(
-            nearest
-        )
-
-    return route
+    return nearest_neighbor_route(
+        locations,
+        matrix
+    )
 
 
 def route_distance(
     route
 ):
-
-    if len(route) <= 1:
-        return 0
 
     total = 0
 
@@ -109,10 +135,27 @@ def route_distance(
         len(route) - 1
     ):
 
-        total += distance_between(
-            route[i],
-            route[i + 1]
-        )
+        lat1 = route[i][
+            "Latitude"
+        ]
+
+        lon1 = route[i][
+            "Longitude"
+        ]
+
+        lat2 = route[i + 1][
+            "Latitude"
+        ]
+
+        lon2 = route[i + 1][
+            "Longitude"
+        ]
+
+        total += (
+            ((lat2 - lat1) ** 2)
+            +
+            ((lon2 - lon1) ** 2)
+        ) ** 0.5
 
     return round(
         total,
@@ -122,66 +165,32 @@ def route_distance(
 
 def split_route_by_distance(
     route,
-    daily_limit=160
+    daily_limit=160,
+    max_stops=10
 ):
 
     days = []
 
     current_day = []
 
-    current_distance = 0
-
-    previous = None
-
-    MAX_STOPS_PER_DAY = 10
-
     for stop in route:
 
-        if previous is None:
-
-            distance = 0
-
-        else:
-
-            distance = distance_between(
-                previous,
-                stop
-            )
-
-        create_new_day = False
-
-        if (
-            current_distance + distance
-            > daily_limit
-            and
-            len(current_day) > 0
-        ):
-            create_new_day = True
+        current_day.append(
+            stop
+        )
 
         if (
             len(current_day)
-            >= MAX_STOPS_PER_DAY
+            >= max_stops
         ):
-            create_new_day = True
-
-        if create_new_day:
 
             days.append(
                 current_day
             )
 
             current_day = []
-            current_distance = 0
 
-        current_day.append(
-            stop
-        )
-
-        current_distance += distance
-
-        previous = stop
-
-    if len(current_day) > 0:
+    if current_day:
 
         days.append(
             current_day
@@ -190,34 +199,28 @@ def split_route_by_distance(
     return days
 
 
-def day_distance(
-    day
-):
-
-    return route_distance(
-        day
-    )
-
-
 def route_summary(
     days
 ):
 
     rows = []
 
-    for i, day in enumerate(
+    for day_no, day in enumerate(
         days,
         start=1
     ):
 
         rows.append(
             {
-                "Day": i,
-                "Stops": len(day),
-                "Distance KM":
-                round(
-                    day_distance(day),
-                    2
+                "Day":
+                day_no,
+
+                "Stops":
+                len(day),
+
+                "Distance":
+                route_distance(
+                    day
                 )
             }
         )
