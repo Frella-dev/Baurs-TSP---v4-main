@@ -8,7 +8,6 @@ lat2,
 lon2
 ):
 
-
 R = 6371
 
 lat1 = math.radians(float(lat1))
@@ -36,12 +35,10 @@ c = 2 * math.atan2(
 
 return R * c
 
-
 def distance_between(
 point_a,
 point_b
 ):
-
 
 return haversine(
     point_a["Latitude"],
@@ -50,17 +47,11 @@ return haversine(
     point_b["Longitude"]
 )
 
-
 def build_master_route(
 df,
 start_lat,
 start_lon
 ):
-"""
-Territory aware route
-Priority aware route
-"""
-
 
 remaining = df.to_dict(
     "records"
@@ -111,9 +102,7 @@ while len(remaining) > 0:
         key=lambda x: x[0]
     )
 
-    selected = candidates[
-        0
-    ][1]
+    selected = candidates[0][1]
 
     route.append(
         selected
@@ -133,11 +122,9 @@ while len(remaining) > 0:
 
 return route
 
-
 def route_distance(
 route
 ):
-
 
 if len(route) <= 1:
     return 0
@@ -158,11 +145,9 @@ return round(
     2
 )
 
-
 def merge_small_days(
 days
 ):
-
 
 if len(days) <= 1:
     return days
@@ -189,12 +174,10 @@ for day in days:
 
 return result
 
-
 def split_route_by_distance(
 route,
 daily_limit=160
 ):
-
 
 days = []
 
@@ -244,7 +227,6 @@ for stop in route:
         )
 
         current_day = []
-
         current_distance = 0
 
     current_day.append(
@@ -265,21 +247,17 @@ return merge_small_days(
     days
 )
 
-
 def day_distance(
 day
 ):
-
 
 return route_distance(
     day
 )
 
-
 def create_day_summary(
 day
 ):
-
 
 visit1 = 0
 visit2 = 0
@@ -312,11 +290,9 @@ return {
     "visit3": visit3
 }
 
-
 def route_summary(
 days
 ):
-
 
 result = []
 
@@ -339,59 +315,20 @@ return pd.DataFrame(
     result
 )
 
-
-def build_area_route(
-df,
-area_column="Town"
-):
-
-
-routes = {}
-
-areas = sorted(
-    df[
-        area_column
-    ]
-    .dropna()
-    .unique()
-)
-
-for area in areas:
-
-    area_df = df[
-        df[
-            area_column
-        ]
-        == area
-    ]
-
-    routes[
-        area
-    ] = area_df.to_dict(
-        "records"
-    )
-
-return routes
-
-
 def get_last_stop(
 day
 ):
-
 
 if len(day) == 0:
     return None
 
 return day[-1]
 
-
 def get_start_point(
 day
 ):
-
 
 if len(day) == 0:
     return None
 
 return day[0]
-
