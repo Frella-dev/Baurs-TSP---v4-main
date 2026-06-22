@@ -1,18 +1,24 @@
 from urllib.parse import quote
 
+
 GOOGLE_MAPS_BASE = (
     "https://www.google.com/maps/dir/?api=1"
 )
 
-MAX_STOPS_PER_ROUTE = 25
+MAX_STOPS_PER_ROUTE = 10
 
 
-def coordinate_string(lat, lon):
+def coordinate_string(
+    lat,
+    lon
+):
 
     return f"{lat},{lon}"
 
 
-def build_route_url(chunk):
+def build_route_url(
+    chunk
+):
 
     if len(chunk) == 0:
         return None
@@ -21,7 +27,8 @@ def build_route_url(chunk):
 
         return (
             "https://www.google.com/maps/search/?api=1"
-            f"&query={chunk[0]['Latitude']},{chunk[0]['Longitude']}"
+            f"&query={chunk[0]['Latitude']},"
+            f"{chunk[0]['Longitude']}"
         )
 
     origin = coordinate_string(
@@ -58,7 +65,9 @@ def build_route_url(chunk):
     )
 
 
-def build_day_route_urls(day):
+def build_day_route_urls(
+    day
+):
 
     urls = []
 
