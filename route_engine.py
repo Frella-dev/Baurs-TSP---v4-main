@@ -2,7 +2,6 @@ import math
 import pandas as pd
 from sklearn.cluster import KMeans
 
-
 def haversine(lat1, lon1, lat2, lon2):
 
     R = 6371
