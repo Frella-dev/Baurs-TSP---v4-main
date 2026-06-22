@@ -1,11 +1,6 @@
 import math
 import pandas as pd
 
-from ortools.constraint_solver import (
-    routing_enums_pb2,
-    pywrapcp
-)
-
 
 def haversine(
     lat1,
@@ -55,161 +50,50 @@ def distance_between(
     )
 
 
-def create_distance_matrix(
-    df
+def build_master_route(
+    df,
+    start_lat,
+    start_lon
 ):
 
-    records = df.to_dict(
-        "records"
-    )
-
-    matrix = []
-
-    for row1 in records:
-
-        row = []
-
-        for row2 in records:
-
-            distance = haversine(
-                row1["Latitude"],
-                row1["Longitude"],
-                row2["Latitude"],
-                row2["Longitude"]
-            )
-
-            row.append(
-                int(distance * 1000)
-            )
-
-        matrix.append(
-            row
-        )
-
-    return matrix
-
-
-def solve_tsp(
-    df
-):
-
-    if len(df) <= 1:
-
-        return df.to_dict(
-            "records"
-        )
-
-    distance_matrix = create_distance_matrix(
-        df
-    )
-
-    manager = pywrapcp.RoutingIndexManager(
-        len(distance_matrix),
-        1,
-        0
-    )
-
-    routing = pywrapcp.RoutingModel(
-        manager
-    )
-
-    def distance_callback(
-        from_index,
-        to_index
-    ):
-
-        from_node = manager.IndexToNode(
-            from_index
-        )
-
-        to_node = manager.IndexToNode(
-            to_index
-        )
-
-        return distance_matrix[
-            from_node
-        ][
-            to_node
-        ]
-
-    transit_callback_index = (
-        routing.RegisterTransitCallback(
-            distance_callback
-        )
-    )
-
-    routing.SetArcCostEvaluatorOfAllVehicles(
-        transit_callback_index
-    )
-
-    search_parameters = (
-        pywrapcp.DefaultRoutingSearchParameters()
-    )
-
-    search_parameters.first_solution_strategy = (
-        routing_enums_pb2
-        .FirstSolutionStrategy
-        .PATH_CHEAPEST_ARC
-    )
-
-    search_parameters.local_search_metaheuristic = (
-        routing_enums_pb2
-        .LocalSearchMetaheuristic
-        .GUIDED_LOCAL_SEARCH
-    )
-
-    search_parameters.time_limit.seconds = 5
-
-    solution = routing.SolveWithParameters(
-        search_parameters
-    )
-
-    if solution is None:
-
-        return df.to_dict(
-            "records"
-        )
-
-    records = df.to_dict(
+    remaining = df.to_dict(
         "records"
     )
 
     route = []
 
-    index = routing.Start(
-        0
-    )
+    current_lat = start_lat
+    current_lon = start_lon
 
-    while not routing.IsEnd(
-        index
-    ):
+    while remaining:
 
-        node = manager.IndexToNode(
-            index
-        )
-
-        route.append(
-            records[node]
-        )
-
-        index = solution.Value(
-            routing.NextVar(
-                index
+        nearest = min(
+            remaining,
+            key=lambda x: haversine(
+                current_lat,
+                current_lon,
+                x["Latitude"],
+                x["Longitude"]
             )
         )
 
+        route.append(
+            nearest
+        )
+
+        current_lat = nearest[
+            "Latitude"
+        ]
+
+        current_lon = nearest[
+            "Longitude"
+        ]
+
+        remaining.remove(
+            nearest
+        )
+
     return route
-
-
-def build_master_route(
-    df,
-    start_lat=None,
-    start_lon=None
-):
-
-    return solve_tsp(
-        df
-    )
 
 
 def route_distance(
@@ -217,7 +101,6 @@ def route_distance(
 ):
 
     if len(route) <= 1:
-
         return 0
 
     total = 0
@@ -235,37 +118,6 @@ def route_distance(
         total,
         2
     )
-
-
-def merge_small_days(
-    days
-):
-
-    if len(days) <= 1:
-
-        return days
-
-    result = []
-
-    for day in days:
-
-        if (
-            len(day) < 5
-            and
-            len(result) > 0
-        ):
-
-            result[-1].extend(
-                day
-            )
-
-        else:
-
-            result.append(
-                day
-            )
-
-    return result
 
 
 def split_route_by_distance(
@@ -299,20 +151,17 @@ def split_route_by_distance(
         create_new_day = False
 
         if (
-            current_distance
-            + distance
+            current_distance + distance
             > daily_limit
             and
             len(current_day) > 0
         ):
-
             create_new_day = True
 
         if (
             len(current_day)
             >= MAX_STOPS_PER_DAY
         ):
-
             create_new_day = True
 
         if create_new_day:
@@ -322,7 +171,6 @@ def split_route_by_distance(
             )
 
             current_day = []
-
             current_distance = 0
 
         current_day.append(
@@ -339,9 +187,7 @@ def split_route_by_distance(
             current_day
         )
 
-    return merge_small_days(
-        days
-    )
+    return days
 
 
 def day_distance(
@@ -353,83 +199,29 @@ def day_distance(
     )
 
 
-def create_day_summary(
-    day
-):
-
-    visit1 = 0
-    visit2 = 0
-    visit3 = 0
-
-    for row in day:
-
-        pending = row.get(
-            "Pending Visit No",
-            999
-        )
-
-        if pending == 1:
-            visit1 += 1
-
-        elif pending == 2:
-            visit2 += 1
-
-        elif pending == 3:
-            visit3 += 1
-
-    return {
-        "stops": len(day),
-        "distance": round(
-            day_distance(day),
-            2
-        ),
-        "visit1": visit1,
-        "visit2": visit2,
-        "visit3": visit3
-    }
-
-
 def route_summary(
     days
 ):
 
-    result = []
+    rows = []
 
-    for idx, day in enumerate(
+    for i, day in enumerate(
         days,
         start=1
     ):
 
-        summary = create_day_summary(
-            day
-        )
-
-        summary["day"] = idx
-
-        result.append(
-            summary
+        rows.append(
+            {
+                "Day": i,
+                "Stops": len(day),
+                "Distance KM":
+                round(
+                    day_distance(day),
+                    2
+                )
+            }
         )
 
     return pd.DataFrame(
-        result
+        rows
     )
-
-
-def get_last_stop(
-    day
-):
-
-    if len(day) == 0:
-        return None
-
-    return day[-1]
-
-
-def get_start_point(
-    day
-):
-
-    if len(day) == 0:
-        return None
-
-    return day[0]
