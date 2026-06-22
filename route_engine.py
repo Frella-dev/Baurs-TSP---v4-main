@@ -1,222 +1,215 @@
-import math
-import pandas as pd
+import mathimport pandas as pdfrom sklearn.cluster import KMeans
 
+def haversine(lat1, lon1, lat2, lon2):
 
-def haversine(
-    lat1,
-    lon1,
-    lat2,
-    lon2
-):
+R = 6371
 
-    R = 6371
+lat1 = math.radians(float(lat1))
+lon1 = math.radians(float(lon1))
+lat2 = math.radians(float(lat2))
+lon2 = math.radians(float(lon2))
 
-    lat1 = math.radians(float(lat1))
-    lon1 = math.radians(float(lon1))
-    lat2 = math.radians(float(lat2))
-    lon2 = math.radians(float(lon2))
+dlat = lat2 - lat1
+dlon = lon2 - lon1
 
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
+a = (
+    math.sin(dlat / 2) ** 2
+    +
+    math.cos(lat1)
+    *
+    math.cos(lat2)
+    *
+    math.sin(dlon / 2) ** 2
+)
 
-    a = (
-        math.sin(dlat / 2) ** 2
-        +
-        math.cos(lat1)
-        *
-        math.cos(lat2)
-        *
-        math.sin(dlon / 2) ** 2
+c = 2 * math.atan2(
+    math.sqrt(a),
+    math.sqrt(1 - a)
+)
+
+return R * c
+
+def distance_between(a, b):
+
+return haversine(
+    a["Latitude"],
+    a["Longitude"],
+    b["Latitude"],
+    b["Longitude"]
+)
+
+def create_zones(df, n_zones=6):
+
+df = df.copy()
+
+coords = df[
+    ["Latitude", "Longitude"]
+]
+
+kmeans = KMeans(
+    n_clusters=n_zones,
+    random_state=42,
+    n_init=10
+)
+
+df["Zone"] = kmeans.fit_predict(coords)
+
+return df
+
+def zone_center(zone_df):
+
+return (
+    zone_df["Latitude"].mean(),
+    zone_df["Longitude"].mean()
+)
+
+def order_zones(df,office_lat,office_lon):
+
+zones = []
+
+for zone in sorted(df["Zone"].unique()):
+
+    zone_df = df[
+        df["Zone"] == zone
+    ]
+
+    lat, lon = zone_center(
+        zone_df
     )
 
-    c = 2 * math.atan2(
-        math.sqrt(a),
-        math.sqrt(1 - a)
+    distance = haversine(
+        office_lat,
+        office_lon,
+        lat,
+        lon
     )
 
-    return R * c
-
-
-def distance_between(
-    a,
-    b
-):
-
-    return haversine(
-        a["Latitude"],
-        a["Longitude"],
-        b["Latitude"],
-        b["Longitude"]
+    zones.append(
+        (zone, distance)
     )
 
+zones.sort(
+    key=lambda x: x[1]
+)
 
-def build_master_route(
-    df,
-    office_lat,
-    office_lon
-):
-    """
-    Build one continuous nationwide route.
-    Start from office.
-    Never jump randomly.
-    """
+return [
+    z[0]
+    for z in zones
+]
 
-    remaining = df.to_dict(
-        "records"
-    )
+def build_master_route(df,start_lat,start_lon):
 
-    route = []
+remaining = df.to_dict(
+    "records"
+)
 
-    current_lat = office_lat
-    current_lon = office_lon
+route = []
 
-    while remaining:
+current_lat = start_lat
+current_lon = start_lon
 
-        nearest = min(
-            remaining,
-            key=lambda x: haversine(
-                current_lat,
-                current_lon,
-                x["Latitude"],
-                x["Longitude"]
-            )
+while remaining:
+
+    nearest = min(
+        remaining,
+        key=lambda x:
+        haversine(
+            current_lat,
+            current_lon,
+            x["Latitude"],
+            x["Longitude"]
         )
-
-        route.append(
-            nearest
-        )
-
-        current_lat = nearest[
-            "Latitude"
-        ]
-
-        current_lon = nearest[
-            "Longitude"
-        ]
-
-        remaining.remove(
-            nearest
-        )
-
-    return route
-
-
-def route_distance(
-    route
-):
-
-    if len(route) <= 1:
-        return 0
-
-    total = 0
-
-    for i in range(
-        len(route) - 1
-    ):
-
-        total += distance_between(
-            route[i],
-            route[i + 1]
-        )
-
-    return round(
-        total,
-        2
     )
 
+    route.append(
+        nearest
+    )
 
-def split_route_by_distance(
-    route,
-    daily_limit=160,
-    max_stops=10
-):
+    current_lat = nearest[
+        "Latitude"
+    ]
 
-    days = []
+    current_lon = nearest[
+        "Longitude"
+    ]
 
-    current_day = []
+    remaining.remove(
+        nearest
+    )
 
-    current_km = 0
+return route
 
-    previous = None
+def split_route_by_distance(route,daily_limit=160,max_stops=10):
 
-    for stop in route:
+days = []
 
-        if previous is None:
+current_day = []
 
-            leg = 0
+current_km = 0
 
-        else:
+previous = None
 
-            leg = distance_between(
-                previous,
-                stop
-            )
+for stop in route:
 
-        create_new_day = False
+    if previous is None:
 
-        if (
-            current_km + leg
-            > daily_limit
-            and
-            len(current_day) > 0
-        ):
-            create_new_day = True
+        leg = 0
 
-        if (
-            len(current_day)
-            >= max_stops
-        ):
-            create_new_day = True
+    else:
 
-        if create_new_day:
-
-            days.append(
-                current_day
-            )
-
-            current_day = []
-            current_km = 0
-
-        current_day.append(
+        leg = distance_between(
+            previous,
             stop
         )
 
-        current_km += leg
-
-        previous = stop
-
-    if current_day:
+    if (
+        current_day
+        and
+        (
+            current_km + leg > daily_limit
+            or
+            len(current_day) >= max_stops
+        )
+    ):
 
         days.append(
             current_day
         )
 
-    return days
+        current_day = []
 
+        current_km = 0
 
-def route_summary(
-    days
+    current_day.append(
+        stop
+    )
+
+    current_km += leg
+
+    previous = stop
+
+if current_day:
+
+    days.append(
+        current_day
+    )
+
+return days
+
+def route_summary(days):
+
+rows = []
+
+for idx, day in enumerate(
+    days,
+    start=1
 ):
 
-    rows = []
-
-    for day_no, day in enumerate(
-        days,
-        start=1
-    ):
-
-        rows.append(
-            {
-                "Day": day_no,
-                "Stops": len(day),
-                "Distance KM":
-                round(
-                    route_distance(day),
-                    2
-                )
-            }
-        )
-
-    return pd.DataFrame(
-        rows
+    rows.append(
+        {
+            "Day": idx,
+            "Stops": len(day)
+        }
     )
+
+return pd.DataFrame(rows)
