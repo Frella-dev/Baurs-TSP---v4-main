@@ -2,7 +2,8 @@ from priority import (prepare_customers,get_pending_customers)
 
 from route_engine import (create_zones,order_zones,build_master_route,split_route_by_distance,route_summary)
 
-OFFICE_LAT = 6.827305661191226OFFICE_LON = 79.95698907652856
+OFFICE_LAT = 6.827305661191226
+OFFICE_LON = 79.95698907652856
 
 def build_nationwide_plan(df,daily_limit=160):
 
