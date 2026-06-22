@@ -1,8 +1,18 @@
 import math
 import pandas as pd
 
+from ortools.constraint_solver import (
+    routing_enums_pb2,
+    pywrapcp
+)
 
-def haversine(lat1, lon1, lat2, lon2):
+
+def haversine(
+    lat1,
+    lon1,
+    lat2,
+    lon2
+):
 
     R = 6371
 
@@ -16,9 +26,12 @@ def haversine(lat1, lon1, lat2, lon2):
 
     a = (
         math.sin(dlat / 2) ** 2
-        + math.cos(lat1)
-        * math.cos(lat2)
-        * math.sin(dlon / 2) ** 2
+        +
+        math.cos(lat1)
+        *
+        math.cos(lat2)
+        *
+        math.sin(dlon / 2) ** 2
     )
 
     c = 2 * math.atan2(
@@ -29,7 +42,10 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def distance_between(point_a, point_b):
+def distance_between(
+    point_a,
+    point_b
+):
 
     return haversine(
         point_a["Latitude"],
@@ -39,72 +55,169 @@ def distance_between(point_a, point_b):
     )
 
 
-def build_master_route(
-    df,
-    start_lat,
-    start_lon
+def create_distance_matrix(
+    df
 ):
 
-    remaining = df.to_dict("records")
+    records = df.to_dict(
+        "records"
+    )
 
-    if len(remaining) == 0:
-        return []
+    matrix = []
+
+    for row1 in records:
+
+        row = []
+
+        for row2 in records:
+
+            distance = haversine(
+                row1["Latitude"],
+                row1["Longitude"],
+                row2["Latitude"],
+                row2["Longitude"]
+            )
+
+            row.append(
+                int(distance * 1000)
+            )
+
+        matrix.append(
+            row
+        )
+
+    return matrix
+
+
+def solve_tsp(
+    df
+):
+
+    if len(df) <= 1:
+
+        return df.to_dict(
+            "records"
+        )
+
+    distance_matrix = create_distance_matrix(
+        df
+    )
+
+    manager = pywrapcp.RoutingIndexManager(
+        len(distance_matrix),
+        1,
+        0
+    )
+
+    routing = pywrapcp.RoutingModel(
+        manager
+    )
+
+    def distance_callback(
+        from_index,
+        to_index
+    ):
+
+        from_node = manager.IndexToNode(
+            from_index
+        )
+
+        to_node = manager.IndexToNode(
+            to_index
+        )
+
+        return distance_matrix[
+            from_node
+        ][
+            to_node
+        ]
+
+    transit_callback_index = (
+        routing.RegisterTransitCallback(
+            distance_callback
+        )
+    )
+
+    routing.SetArcCostEvaluatorOfAllVehicles(
+        transit_callback_index
+    )
+
+    search_parameters = (
+        pywrapcp.DefaultRoutingSearchParameters()
+    )
+
+    search_parameters.first_solution_strategy = (
+        routing_enums_pb2
+        .FirstSolutionStrategy
+        .PATH_CHEAPEST_ARC
+    )
+
+    search_parameters.local_search_metaheuristic = (
+        routing_enums_pb2
+        .LocalSearchMetaheuristic
+        .GUIDED_LOCAL_SEARCH
+    )
+
+    search_parameters.time_limit.seconds = 5
+
+    solution = routing.SolveWithParameters(
+        search_parameters
+    )
+
+    if solution is None:
+
+        return df.to_dict(
+            "records"
+        )
+
+    records = df.to_dict(
+        "records"
+    )
 
     route = []
 
-    current_lat = start_lat
-    current_lon = start_lon
+    index = routing.Start(
+        0
+    )
 
-    while remaining:
+    while not routing.IsEnd(
+        index
+    ):
 
-        candidates = []
-
-        for stop in remaining:
-
-            distance = haversine(
-                current_lat,
-                current_lon,
-                stop["Latitude"],
-                stop["Longitude"]
-            )
-
-            priority = stop.get(
-                "Priority",
-                0
-            )
-
-            score = distance - (
-                priority * 0.20
-            )
-
-            candidates.append(
-                (score, stop)
-            )
-
-        candidates.sort(
-            key=lambda x: x[0]
+        node = manager.IndexToNode(
+            index
         )
 
-        selected = candidates[0][1]
+        route.append(
+            records[node]
+        )
 
-        route.append(selected)
-
-        current_lat = selected[
-            "Latitude"
-        ]
-
-        current_lon = selected[
-            "Longitude"
-        ]
-
-        remaining.remove(selected)
+        index = solution.Value(
+            routing.NextVar(
+                index
+            )
+        )
 
     return route
 
 
-def route_distance(route):
+def build_master_route(
+    df,
+    start_lat=None,
+    start_lon=None
+):
+
+    return solve_tsp(
+        df
+    )
+
+
+def route_distance(
+    route
+):
 
     if len(route) <= 1:
+
         return 0
 
     total = 0
@@ -118,12 +231,18 @@ def route_distance(route):
             route[i + 1]
         )
 
-    return round(total, 2)
+    return round(
+        total,
+        2
+    )
 
 
-def merge_small_days(days):
+def merge_small_days(
+    days
+):
 
     if len(days) <= 1:
+
         return days
 
     result = []
@@ -132,14 +251,19 @@ def merge_small_days(days):
 
         if (
             len(day) < 5
-            and len(result) > 0
+            and
+            len(result) > 0
         ):
 
-            result[-1].extend(day)
+            result[-1].extend(
+                day
+            )
 
         else:
 
-            result.append(day)
+            result.append(
+                day
+            )
 
     return result
 
@@ -157,8 +281,7 @@ def split_route_by_distance(
 
     previous = None
 
-    MIN_STOPS_PER_DAY = 8
-    MAX_STOPS_PER_DAY = 20
+    MAX_STOPS_PER_DAY = 10
 
     for stop in route:
 
@@ -176,17 +299,20 @@ def split_route_by_distance(
         create_new_day = False
 
         if (
-            current_distance + distance
+            current_distance
+            + distance
             > daily_limit
-            and len(current_day)
-            >= MIN_STOPS_PER_DAY
+            and
+            len(current_day) > 0
         ):
+
             create_new_day = True
 
         if (
             len(current_day)
             >= MAX_STOPS_PER_DAY
         ):
+
             create_new_day = True
 
         if create_new_day:
@@ -199,25 +325,37 @@ def split_route_by_distance(
 
             current_distance = 0
 
-        current_day.append(stop)
+        current_day.append(
+            stop
+        )
 
         current_distance += distance
 
         previous = stop
 
-    if current_day:
+    if len(current_day) > 0:
 
-        days.append(current_day)
+        days.append(
+            current_day
+        )
 
-    return merge_small_days(days)
+    return merge_small_days(
+        days
+    )
 
 
-def day_distance(day):
+def day_distance(
+    day
+):
 
-    return route_distance(day)
+    return route_distance(
+        day
+    )
 
 
-def create_day_summary(day):
+def create_day_summary(
+    day
+):
 
     visit1 = 0
     visit2 = 0
@@ -251,7 +389,9 @@ def create_day_summary(day):
     }
 
 
-def route_summary(days):
+def route_summary(
+    days
+):
 
     result = []
 
@@ -266,12 +406,18 @@ def route_summary(days):
 
         summary["day"] = idx
 
-        result.append(summary)
+        result.append(
+            summary
+        )
 
-    return pd.DataFrame(result)
+    return pd.DataFrame(
+        result
+    )
 
 
-def get_last_stop(day):
+def get_last_stop(
+    day
+):
 
     if len(day) == 0:
         return None
@@ -279,7 +425,9 @@ def get_last_stop(day):
     return day[-1]
 
 
-def get_start_point(day):
+def get_start_point(
+    day
+):
 
     if len(day) == 0:
         return None
