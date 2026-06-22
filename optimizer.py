@@ -1,5 +1,4 @@
 import pandas as pd
-from sklearn.cluster import KMeans
 
 from priority import (
     prepare_customers,
@@ -9,9 +8,12 @@ from priority import (
 from route_engine import (
     build_master_route,
     split_route_by_distance,
-    route_summary,
-    haversine
+    route_summary
 )
+
+
+OFFICE_LAT = 6.827305661191226
+OFFICE_LON = 79.95698907652856
 
 
 def create_plan(
@@ -40,66 +42,16 @@ def create_plan(
                 str(area).upper()
             ].copy()
 
-        route = build_master_route(
-            df,
-            None,
-            None
-        )
-
-        return split_route_by_distance(
-            route,
-            daily_limit
-        )
-
-    coords = df[
-        [
-            "Latitude",
-            "Longitude"
-        ]
-    ].values
-
-    cluster_count = max(
-        1,
-        min(
-            len(df) // 12,
-            10
-        )
+    route = build_master_route(
+        df,
+        OFFICE_LAT,
+        OFFICE_LON
     )
 
-    kmeans = KMeans(
-        n_clusters=cluster_count,
-        random_state=42,
-        n_init=10
+    days = split_route_by_distance(
+        route,
+        daily_limit
     )
-
-    df["Cluster"] = kmeans.fit_predict(
-        coords
-    )
-
-    days = []
-
-    for cluster in sorted(
-        df["Cluster"].unique()
-    ):
-
-        cluster_df = df[
-            df["Cluster"] == cluster
-        ].copy()
-
-        route = build_master_route(
-            cluster_df,
-            None,
-            None
-        )
-
-        cluster_days = split_route_by_distance(
-            route,
-            daily_limit
-        )
-
-        days.extend(
-            cluster_days
-        )
 
     return days
 
@@ -127,25 +79,3 @@ def get_day_stops(
     return days[
         day_no - 1
     ]
-
-
-def nearest_day(
-    day_a,
-    day_b
-):
-
-    if len(day_a) == 0:
-        return 999999
-
-    if len(day_b) == 0:
-        return 999999
-
-    a = day_a[-1]
-    b = day_b[0]
-
-    return haversine(
-        a["Latitude"],
-        a["Longitude"],
-        b["Latitude"],
-        b["Longitude"]
-    )
