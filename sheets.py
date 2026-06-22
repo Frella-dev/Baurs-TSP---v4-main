@@ -54,6 +54,23 @@ def load_sheet(sheet_url):
     return clean_sheet(df)
 
 
+def validate_columns(df):
+
+    missing = []
+
+    for col in REQUIRED_COLUMNS:
+
+        if col not in df.columns:
+
+            missing.append(col)
+
+    if len(missing) > 0:
+
+        raise Exception(
+            f"Missing columns: {missing}"
+        )
+
+
 def clean_sheet(df):
 
     df = df.copy()
@@ -65,6 +82,18 @@ def clean_sheet(df):
     )
 
     validate_columns(df)
+
+    df["Customer name"] = (
+        df["Customer name"]
+        .astype(str)
+        .str.strip()
+    )
+
+    df["Town"] = (
+        df["Town"]
+        .astype(str)
+        .str.strip()
+    )
 
     df["Latitude"] = pd.to_numeric(
         df["Latitude"],
@@ -92,40 +121,13 @@ def clean_sheet(df):
         df[col] = (
             df[col]
             .astype(str)
-            .str.strip()
             .str.upper()
+            .str.strip()
         )
 
-    df["Customer name"] = (
-        df["Customer name"]
-        .astype(str)
-        .str.strip()
+    return df.reset_index(
+        drop=True
     )
-
-    df["Town"] = (
-        df["Town"]
-        .astype(str)
-        .str.strip()
-    )
-
-    return df
-
-
-def validate_columns(df):
-
-    missing = []
-
-    for col in REQUIRED_COLUMNS:
-
-        if col not in df.columns:
-
-            missing.append(col)
-
-    if missing:
-
-        raise Exception(
-            f"Missing columns: {missing}"
-        )
 
 
 def get_all_customers(df):
@@ -178,46 +180,82 @@ def filter_by_town(
     ].copy()
 
 
+def get_customer_count(df):
+
+    return len(df)
+
+
+def get_town_count(df):
+
+    return df["Town"].nunique()
+
+
 def sheet_summary(df):
+
+    visit1 = len(
+        df[
+            df["1st Visit"]
+            != "YES"
+        ]
+    )
+
+    visit2 = len(
+        df[
+            (
+                df["1st Visit"]
+                == "YES"
+            )
+            &
+            (
+                df["2nd Visit"]
+                != "YES"
+            )
+        ]
+    )
+
+    visit3 = len(
+        df[
+            (
+                df["1st Visit"]
+                == "YES"
+            )
+            &
+            (
+                df["2nd Visit"]
+                == "YES"
+            )
+            &
+            (
+                df["3rd Visit"]
+                != "YES"
+            )
+        ]
+    )
+
+    completed = len(
+        df[
+            (
+                df["1st Visit"]
+                == "YES"
+            )
+            &
+            (
+                df["2nd Visit"]
+                == "YES"
+            )
+            &
+            (
+                df["3rd Visit"]
+                == "YES"
+            )
+        ]
+    )
 
     return {
         "customers": len(df),
         "towns": df["Town"].nunique(),
-        "visit1_no": len(
-            df[
-                df["1st Visit"]
-                != "YES"
-            ]
-        ),
-        "visit2_no": len(
-            df[
-                (
-                    df["1st Visit"]
-                    == "YES"
-                )
-                &
-                (
-                    df["2nd Visit"]
-                    != "YES"
-                )
-            ]
-        ),
-        "visit3_no": len(
-            df[
-                (
-                    df["1st Visit"]
-                    == "YES"
-                )
-                &
-                (
-                    df["2nd Visit"]
-                    == "YES"
-                )
-                &
-                (
-                    df["3rd Visit"]
-                    != "YES"
-                )
-            ]
-        )
+        "visit1": visit1,
+        "visit2": visit2,
+        "visit3": visit3,
+        "completed": completed
     }
