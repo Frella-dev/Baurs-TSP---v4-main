@@ -8,7 +8,7 @@ lat2,
 lon2
 ):
 
-```
+
 R = 6371
 
 lat1 = math.radians(float(lat1))
@@ -35,21 +35,21 @@ c = 2 * math.atan2(
 )
 
 return R * c
-```
+
 
 def distance_between(
 point_a,
 point_b
 ):
 
-```
+
 return haversine(
     point_a["Latitude"],
     point_a["Longitude"],
     point_b["Latitude"],
     point_b["Longitude"]
 )
-```
+
 
 def build_master_route(
 df,
@@ -61,7 +61,7 @@ Territory aware route
 Priority aware route
 """
 
-```
+
 remaining = df.to_dict(
     "records"
 )
@@ -132,13 +132,13 @@ while len(remaining) > 0:
     )
 
 return route
-```
+
 
 def route_distance(
 route
 ):
 
-```
+
 if len(route) <= 1:
     return 0
 
@@ -157,13 +157,13 @@ return round(
     total,
     2
 )
-```
+
 
 def merge_small_days(
 days
 ):
 
-```
+
 if len(days) <= 1:
     return days
 
@@ -188,14 +188,14 @@ for day in days:
         )
 
 return result
-```
+
 
 def split_route_by_distance(
 route,
 daily_limit=160
 ):
 
-```
+
 days = []
 
 current_day = []
@@ -264,23 +264,23 @@ if len(current_day) > 0:
 return merge_small_days(
     days
 )
-```
+
 
 def day_distance(
 day
 ):
 
-```
+
 return route_distance(
     day
 )
-```
+
 
 def create_day_summary(
 day
 ):
 
-```
+
 visit1 = 0
 visit2 = 0
 visit3 = 0
@@ -311,13 +311,13 @@ return {
     "visit2": visit2,
     "visit3": visit3
 }
-```
+
 
 def route_summary(
 days
 ):
 
-```
+
 result = []
 
 for idx, day in enumerate(
@@ -338,14 +338,14 @@ for idx, day in enumerate(
 return pd.DataFrame(
     result
 )
-```
+
 
 def build_area_route(
 df,
 area_column="Town"
 ):
 
-```
+
 routes = {}
 
 areas = sorted(
@@ -372,26 +372,26 @@ for area in areas:
     )
 
 return routes
-```
+
 
 def get_last_stop(
 day
 ):
 
-```
+
 if len(day) == 0:
     return None
 
 return day[-1]
-```
+
 
 def get_start_point(
 day
 ):
 
-```
+
 if len(day) == 0:
     return None
 
 return day[0]
-```
+
