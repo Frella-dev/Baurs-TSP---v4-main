@@ -28,19 +28,14 @@ from googlemaps import (
 )
 
 
-OFFICE_LAT = 6.8275814230546725
-OFFICE_LON = 79.95698659415302
-
-
 st.set_page_config(
-    page_title="Sales Route Planner V3",
+    page_title="Pharma Route Planner V5",
     layout="wide"
 )
 
 st.title(
-    "Sales Route Planner V3"
+    "Pharma Route Planner V5"
 )
-
 
 if "days" not in st.session_state:
     st.session_state.days = None
@@ -63,7 +58,8 @@ planning_mode = st.radio(
 
 daily_limit = st.number_input(
     "Daily KM Limit",
-    min_value=10,
+    min_value=25,
+    max_value=500,
     value=160
 )
 
@@ -85,12 +81,15 @@ if sheet_url:
         if planning_mode == "Area":
 
             selected_area = st.selectbox(
-                "Select Town",
+                "Select Area",
                 towns
             )
 
-    except Exception:
-        pass
+    except Exception as e:
+
+        st.warning(
+            str(e)
+        )
 
 
 if st.button(
@@ -128,7 +127,7 @@ if st.button(
         st.session_state.generated = True
 
         st.success(
-            f"{len(days)} route day(s) generated"
+            f"{len(days)} Day Route Plan Generated"
         )
 
     except Exception as e:
@@ -149,7 +148,7 @@ if st.session_state.generated:
     st.divider()
 
     st.header(
-        "Plan Summary"
+        "Route Summary"
     )
 
     summary_df = get_plan_summary(
@@ -163,23 +162,19 @@ if st.session_state.generated:
 
     st.divider()
 
-    show_full_map = st.checkbox(
-        "Show Full Sri Lanka Route Map"
-    )
-
-    if show_full_map:
+    if st.checkbox(
+        "Show Full Route Map"
+    ):
 
         full_map = create_full_plan_map(
-            days,
-            OFFICE_LAT,
-            OFFICE_LON
+            days
         )
 
         st_folium(
             full_map,
             width=1400,
             height=700,
-            key="full_map"
+            key="full_route_map"
         )
 
     st.divider()
@@ -197,7 +192,7 @@ if st.session_state.generated:
             day
         )
 
-        display_cols = []
+        columns = []
 
         for col in [
             "Customer name",
@@ -209,62 +204,65 @@ if st.session_state.generated:
         ]:
 
             if col in day_df.columns:
-                display_cols.append(
+
+                columns.append(
                     col
                 )
 
         st.dataframe(
             day_df[
-                display_cols
+                columns
             ],
             use_container_width=True
         )
 
-        route_parts = build_day_route_urls(
-            day
+        route_parts = (
+            build_day_route_urls(
+                day
+            )
         )
 
         if len(route_parts) == 1:
 
             st.link_button(
-                f"🗺 Open Day {day_no} In Google Maps",
+                f"Open Day {day_no} Route",
                 route_parts[0]["url"]
             )
 
         else:
 
-            st.warning(
-                f"Day {day_no} exceeds Google Maps waypoint limit."
+            st.info(
+                f"Day {day_no} split into "
+                f"{len(route_parts)} Google Maps routes"
             )
 
             for part in route_parts:
 
                 st.link_button(
                     (
-                        f"🗺 Day {day_no} Route {part['part']} "
-                        f"(Stops {part['start']} - {part['end']})"
+                        f"Day {day_no} "
+                        f"Route {part['part']} "
+                        f"({part['start']} - {part['end']})"
                     ),
                     part["url"]
                 )
 
         show_map = st.checkbox(
-            f"Show Day {day_no} Map",
-            key=f"map_{day_no}"
+            f"Show Map Day {day_no}",
+            key=f"day_map_{day_no}"
         )
 
         if show_map:
 
             day_map = create_day_map(
-                day,
-                OFFICE_LAT,
-                OFFICE_LON
+                day
             )
 
             st_folium(
                 day_map,
                 width=1200,
                 height=700,
-                key=f"folium_day_{day_no}"
+                key=f"folium_{day_no}"
             )
 
         st.divider()
@@ -276,7 +274,10 @@ if st.session_state.generated:
     all_rows = []
 
     for day in days:
-        all_rows.extend(day)
+
+        all_rows.extend(
+            day
+        )
 
     priority_df = pd.DataFrame(
         all_rows
@@ -288,26 +289,22 @@ if st.session_state.generated:
 
     col1, col2, col3, col4 = st.columns(4)
 
-    with col1:
-        st.metric(
-            "Visit 1 Pending",
-            summary["Visit1"]
-        )
+    col1.metric(
+        "Visit 1",
+        summary["Visit1"]
+    )
 
-    with col2:
-        st.metric(
-            "Visit 2 Pending",
-            summary["Visit2"]
-        )
+    col2.metric(
+        "Visit 2",
+        summary["Visit2"]
+    )
 
-    with col3:
-        st.metric(
-            "Visit 3 Pending",
-            summary["Visit3"]
-        )
+    col3.metric(
+        "Visit 3",
+        summary["Visit3"]
+    )
 
-    with col4:
-        st.metric(
-            "Completed",
-            summary["Completed"]
-        )
+    col4.metric(
+        "Completed",
+        summary["Completed"]
+    )
