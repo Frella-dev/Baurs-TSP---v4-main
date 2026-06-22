@@ -1,334 +1,287 @@
 import math
 import pandas as pd
 
-def haversine(
-lat1,
-lon1,
-lat2,
-lon2
-):
 
-R = 6371
+def haversine(lat1, lon1, lat2, lon2):
 
-lat1 = math.radians(float(lat1))
-lon1 = math.radians(float(lon1))
-lat2 = math.radians(float(lat2))
-lon2 = math.radians(float(lon2))
+    R = 6371
 
-dlat = lat2 - lat1
-dlon = lon2 - lon1
+    lat1 = math.radians(float(lat1))
+    lon1 = math.radians(float(lon1))
+    lat2 = math.radians(float(lat2))
+    lon2 = math.radians(float(lon2))
 
-a = (
-    math.sin(dlat / 2) ** 2
-    +
-    math.cos(lat1)
-    *
-    math.cos(lat2)
-    *
-    math.sin(dlon / 2) ** 2
-)
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
 
-c = 2 * math.atan2(
-    math.sqrt(a),
-    math.sqrt(1 - a)
-)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1)
+        * math.cos(lat2)
+        * math.sin(dlon / 2) ** 2
+    )
 
-return R * c
+    c = 2 * math.atan2(
+        math.sqrt(a),
+        math.sqrt(1 - a)
+    )
 
-def distance_between(
-point_a,
-point_b
-):
+    return R * c
 
-return haversine(
-    point_a["Latitude"],
-    point_a["Longitude"],
-    point_b["Latitude"],
-    point_b["Longitude"]
-)
+
+def distance_between(point_a, point_b):
+
+    return haversine(
+        point_a["Latitude"],
+        point_a["Longitude"],
+        point_b["Latitude"],
+        point_b["Longitude"]
+    )
+
 
 def build_master_route(
-df,
-start_lat,
-start_lon
+    df,
+    start_lat,
+    start_lon
 ):
 
-remaining = df.to_dict(
-    "records"
-)
+    remaining = df.to_dict("records")
 
-if len(remaining) == 0:
-    return []
+    if len(remaining) == 0:
+        return []
 
-route = []
+    route = []
 
-current_lat = start_lat
-current_lon = start_lon
+    current_lat = start_lat
+    current_lon = start_lon
 
-while len(remaining) > 0:
+    while remaining:
 
-    candidates = []
+        candidates = []
 
-    for stop in remaining:
+        for stop in remaining:
 
-        distance = haversine(
-            current_lat,
-            current_lon,
-            stop["Latitude"],
-            stop["Longitude"]
-        )
+            distance = haversine(
+                current_lat,
+                current_lon,
+                stop["Latitude"],
+                stop["Longitude"]
+            )
 
-        priority = stop.get(
-            "Priority",
-            0
-        )
+            priority = stop.get(
+                "Priority",
+                0
+            )
 
-        score = (
-            distance
-            -
-            (
+            score = distance - (
                 priority * 0.20
             )
-        )
 
-        candidates.append(
-            (
-                score,
-                stop
+            candidates.append(
+                (score, stop)
             )
+
+        candidates.sort(
+            key=lambda x: x[0]
         )
 
-    candidates.sort(
-        key=lambda x: x[0]
-    )
+        selected = candidates[0][1]
 
-    selected = candidates[0][1]
+        route.append(selected)
 
-    route.append(
-        selected
-    )
+        current_lat = selected[
+            "Latitude"
+        ]
 
-    current_lat = selected[
-        "Latitude"
-    ]
+        current_lon = selected[
+            "Longitude"
+        ]
 
-    current_lon = selected[
-        "Longitude"
-    ]
+        remaining.remove(selected)
 
-    remaining.remove(
-        selected
-    )
+    return route
 
-return route
 
-def route_distance(
-route
-):
+def route_distance(route):
 
-if len(route) <= 1:
-    return 0
+    if len(route) <= 1:
+        return 0
 
-total = 0
+    total = 0
 
-for i in range(
-    len(route) - 1
-):
-
-    total += distance_between(
-        route[i],
-        route[i + 1]
-    )
-
-return round(
-    total,
-    2
-)
-
-def merge_small_days(
-days
-):
-
-if len(days) <= 1:
-    return days
-
-result = []
-
-for day in days:
-
-    if (
-        len(day) < 5
-        and
-        len(result) > 0
+    for i in range(
+        len(route) - 1
     ):
 
-        result[-1].extend(
-            day
+        total += distance_between(
+            route[i],
+            route[i + 1]
         )
 
-    else:
+    return round(total, 2)
 
-        result.append(
-            day
-        )
 
-return result
+def merge_small_days(days):
+
+    if len(days) <= 1:
+        return days
+
+    result = []
+
+    for day in days:
+
+        if (
+            len(day) < 5
+            and len(result) > 0
+        ):
+
+            result[-1].extend(day)
+
+        else:
+
+            result.append(day)
+
+    return result
+
 
 def split_route_by_distance(
-route,
-daily_limit=160
+    route,
+    daily_limit=160
 ):
 
-days = []
+    days = []
 
-current_day = []
+    current_day = []
 
-current_distance = 0
+    current_distance = 0
 
-previous = None
+    previous = None
 
-MIN_STOPS_PER_DAY = 8
-MAX_STOPS_PER_DAY = 20
+    MIN_STOPS_PER_DAY = 8
+    MAX_STOPS_PER_DAY = 20
 
-for stop in route:
+    for stop in route:
 
-    if previous is None:
+        if previous is None:
 
-        distance = 0
+            distance = 0
 
-    else:
+        else:
 
-        distance = distance_between(
-            previous,
-            stop
+            distance = distance_between(
+                previous,
+                stop
+            )
+
+        create_new_day = False
+
+        if (
+            current_distance + distance
+            > daily_limit
+            and len(current_day)
+            >= MIN_STOPS_PER_DAY
+        ):
+            create_new_day = True
+
+        if (
+            len(current_day)
+            >= MAX_STOPS_PER_DAY
+        ):
+            create_new_day = True
+
+        if create_new_day:
+
+            days.append(
+                current_day
+            )
+
+            current_day = []
+
+            current_distance = 0
+
+        current_day.append(stop)
+
+        current_distance += distance
+
+        previous = stop
+
+    if current_day:
+
+        days.append(current_day)
+
+    return merge_small_days(days)
+
+
+def day_distance(day):
+
+    return route_distance(day)
+
+
+def create_day_summary(day):
+
+    visit1 = 0
+    visit2 = 0
+    visit3 = 0
+
+    for row in day:
+
+        pending = row.get(
+            "Pending Visit No",
+            999
         )
 
-    create_new_day = False
+        if pending == 1:
+            visit1 += 1
 
-    if (
-        current_distance + distance
-        > daily_limit
-        and
-        len(current_day)
-        >= MIN_STOPS_PER_DAY
+        elif pending == 2:
+            visit2 += 1
+
+        elif pending == 3:
+            visit3 += 1
+
+    return {
+        "stops": len(day),
+        "distance": round(
+            day_distance(day),
+            2
+        ),
+        "visit1": visit1,
+        "visit2": visit2,
+        "visit3": visit3
+    }
+
+
+def route_summary(days):
+
+    result = []
+
+    for idx, day in enumerate(
+        days,
+        start=1
     ):
-        create_new_day = True
 
-    if (
-        len(current_day)
-        >= MAX_STOPS_PER_DAY
-    ):
-        create_new_day = True
-
-    if create_new_day:
-
-        days.append(
-            current_day
+        summary = create_day_summary(
+            day
         )
 
-        current_day = []
-        current_distance = 0
+        summary["day"] = idx
 
-    current_day.append(
-        stop
-    )
+        result.append(summary)
 
-    current_distance += distance
+    return pd.DataFrame(result)
 
-    previous = stop
 
-if len(current_day) > 0:
+def get_last_stop(day):
 
-    days.append(
-        current_day
-    )
+    if len(day) == 0:
+        return None
 
-return merge_small_days(
-    days
-)
+    return day[-1]
 
-def day_distance(
-day
-):
 
-return route_distance(
-    day
-)
+def get_start_point(day):
 
-def create_day_summary(
-day
-):
+    if len(day) == 0:
+        return None
 
-visit1 = 0
-visit2 = 0
-visit3 = 0
-
-for row in day:
-
-    pending = row.get(
-        "Pending Visit No",
-        999
-    )
-
-    if pending == 1:
-        visit1 += 1
-
-    elif pending == 2:
-        visit2 += 1
-
-    elif pending == 3:
-        visit3 += 1
-
-return {
-    "stops": len(day),
-    "distance": round(
-        day_distance(day),
-        2
-    ),
-    "visit1": visit1,
-    "visit2": visit2,
-    "visit3": visit3
-}
-
-def route_summary(
-days
-):
-
-result = []
-
-for idx, day in enumerate(
-    days,
-    start=1
-):
-
-    summary = create_day_summary(
-        day
-    )
-
-    summary["day"] = idx
-
-    result.append(
-        summary
-    )
-
-return pd.DataFrame(
-    result
-)
-
-def get_last_stop(
-day
-):
-
-if len(day) == 0:
-    return None
-
-return day[-1]
-
-def get_start_point(
-day
-):
-
-if len(day) == 0:
-    return None
-
-return day[0]
+    return day[0]
