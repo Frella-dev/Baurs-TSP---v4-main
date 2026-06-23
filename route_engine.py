@@ -6,7 +6,6 @@ from ortools.constraint_solver import routing_enums_pb2
 VISIT_MINUTES = 15
 WORKING_DAY_MINUTES = 480
 AVERAGE_SPEED_KMH = 40
-MAX_STOPS_PER_DAY = 12
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -74,10 +73,15 @@ def build_distance_matrix(df):
 
 def solve_tsp(df):
 
-    if len(df) <= 2:
-        return df.to_dict("records")
+    if len(df) <= 1:
 
-    distance_matrix = build_distance_matrix(df)
+        return df.to_dict(
+            "records"
+        )
+
+    distance_matrix = build_distance_matrix(
+        df
+    )
 
     manager = pywrapcp.RoutingIndexManager(
         len(distance_matrix),
@@ -93,6 +97,7 @@ def solve_tsp(df):
         from_index,
         to_index
     ):
+
         from_node = manager.IndexToNode(
             from_index
         )
@@ -122,25 +127,26 @@ def solve_tsp(df):
     )
 
     search_parameters.first_solution_strategy = (
-        routing_enums_pb2.FirstSolutionStrategy
-        .PATH_CHEAPEST_ARC
+        routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
     )
 
     search_parameters.local_search_metaheuristic = (
-        routing_enums_pb2.LocalSearchMetaheuristic
-        .GUIDED_LOCAL_SEARCH
+        routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     )
 
-    search_parameters.time_limit.seconds = 15
+    search_parameters.time_limit.seconds = 10
 
     solution = routing.SolveWithParameters(
         search_parameters
     )
 
     if solution is None:
-        return df.to_dict("records")
 
-    ordered_rows = []
+        return df.to_dict(
+            "records"
+        )
+
+    route = []
 
     index = routing.Start(0)
 
@@ -150,7 +156,7 @@ def solve_tsp(df):
             index
         )
 
-        ordered_rows.append(
+        route.append(
             df.iloc[node].to_dict()
         )
 
@@ -158,7 +164,7 @@ def solve_tsp(df):
             routing.NextVar(index)
         )
 
-    return ordered_rows
+    return route
 
 
 def route_distance(route):
@@ -182,7 +188,10 @@ def route_distance(route):
     return total
 
 
-def split_route_by_time(route):
+def split_route_by_time(
+    route,
+    max_stops=12
+):
 
     days = []
 
@@ -212,12 +221,10 @@ def split_route_by_time(route):
                 AVERAGE_SPEED_KMH
             ) * 60
 
-        stop_minutes = VISIT_MINUTES
-
         total_needed = (
-            travel_minutes
+            VISIT_MINUTES
             +
-            stop_minutes
+            travel_minutes
         )
 
         if (
@@ -232,7 +239,7 @@ def split_route_by_time(route):
                 or
                 len(current_day)
                 >=
-                MAX_STOPS_PER_DAY
+                max_stops
             )
         ):
 
@@ -248,7 +255,9 @@ def split_route_by_time(route):
             stop
         )
 
-        current_minutes += total_needed
+        current_minutes += (
+            total_needed
+        )
 
         previous = stop
 
@@ -261,12 +270,18 @@ def split_route_by_time(route):
     return days
 
 
-def build_optimized_plan(df):
+def build_optimized_plan(
+    df,
+    max_stops=12
+):
 
-    ordered_route = solve_tsp(df)
+    ordered_route = solve_tsp(
+        df
+    )
 
     return split_route_by_time(
-        ordered_route
+        ordered_route,
+        max_stops=max_stops
     )
 
 
@@ -279,19 +294,17 @@ def route_summary(days):
         start=1
     ):
 
-        distance = route_distance(
-            day
-        )
-
         rows.append(
             {
                 "Day": day_no,
                 "Stops": len(day),
                 "KM": round(
-                    distance,
+                    route_distance(day),
                     1
                 )
             }
         )
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(
+        rows
+    )
