@@ -14,7 +14,8 @@ OFFICE_LON = 79.95698907652856
 
 def build_area_plan(
     df,
-    area
+    area,
+    max_stops=12
 ):
 
     area_df = df[
@@ -26,14 +27,19 @@ def build_area_plan(
     ].copy()
 
     return build_optimized_plan(
-        area_df
+        area_df,
+        max_stops=max_stops
     )
 
 
-def build_nationwide_plan(df):
+def build_nationwide_plan(
+    df,
+    max_stops=12
+):
 
     return build_optimized_plan(
-        df
+        df,
+        max_stops=max_stops
     )
 
 
@@ -42,29 +48,39 @@ def create_plan(
     ors_api_key=None,
     mode="nationwide",
     area=None,
-    daily_limit=160
+    max_stops=12
 ):
 
     _ = ors_api_key
-    _ = daily_limit
 
-    df = prepare_customers(df)
+    df = prepare_customers(
+        df
+    )
 
-    df = get_pending_customers(df)
+    df = get_pending_customers(
+        df
+    )
+
+    if df.empty:
+        return []
 
     if mode == "area":
 
         return build_area_plan(
             df,
-            area
+            area,
+            max_stops=max_stops
         )
 
     return build_nationwide_plan(
-        df
+        df,
+        max_stops=max_stops
     )
 
 
-def get_plan_summary(days):
+def get_plan_summary(
+    days
+):
 
     return route_summary(
         days
