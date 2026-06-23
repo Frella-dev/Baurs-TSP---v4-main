@@ -1,4 +1,6 @@
-import pandas as pdimport streamlit as stfrom streamlit_folium import st_folium
+import pandas as pd
+import streamlit as st
+from streamlit_folium import st_folium
 
 from googlemaps import (build_day_route_urls,)
 
