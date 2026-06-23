@@ -2,6 +2,7 @@ import math
 import pandas as pd
 from ortools.constraint_solver import pywrapcp
 from ortools.constraint_solver import routing_enums_pb2
+from sklearn.cluster import KMeans
 
 OFFICE_LAT = 6.827512186996366
 OFFICE_LON = 79.95694904907492
@@ -293,15 +294,88 @@ def build_optimized_plan(
     if len(df) == 0:
         return []
 
-    ordered_route = solve_tsp(
-        df
+    df = df.copy()
+
+    cluster_count = max(
+        1,
+        min(
+            8,
+            round(len(df) / 35)
+        )
     )
+
+    coords = df[
+        ["Latitude", "Longitude"]
+    ].values
+
+    kmeans = KMeans(
+        n_clusters=cluster_count,
+        random_state=42,
+        n_init=10
+    )
+
+    df["Cluster"] = (
+        kmeans.fit_predict(coords)
+    )
+
+    cluster_order = []
+
+    for cluster_id in sorted(
+        df["Cluster"].unique()
+    ):
+
+        cluster_df = df[
+            df["Cluster"] == cluster_id
+        ]
+
+        center_lat = (
+            cluster_df["Latitude"]
+            .mean()
+        )
+
+        center_lon = (
+            cluster_df["Longitude"]
+            .mean()
+        )
+
+        office_distance = haversine(
+            OFFICE_LAT,
+            OFFICE_LON,
+            center_lat,
+            center_lon
+        )
+
+        cluster_order.append(
+            (
+                cluster_id,
+                office_distance
+            )
+        )
+
+    cluster_order.sort(
+        key=lambda x: x[1]
+    )
+
+    final_route = []
+
+    for cluster_id, _ in cluster_order:
+
+        cluster_df = df[
+            df["Cluster"] == cluster_id
+        ].copy()
+
+        cluster_route = solve_tsp(
+            cluster_df
+        )
+
+        final_route.extend(
+            cluster_route
+        )
 
     return split_route_by_time(
-        ordered_route,
+        final_route,
         max_stops=max_stops
     )
-
 
 def route_summary(days):
 
