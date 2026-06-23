@@ -186,17 +186,10 @@ def solve_tsp(df):
 
 def route_distance(route):
 
-    if len(route) == 0:
+    if len(route) < 2:
         return 0
 
     total = 0
-
-    total += haversine(
-        OFFICE_LAT,
-        OFFICE_LON,
-        route[0]["Latitude"],
-        route[0]["Longitude"]
-    )
 
     for i in range(
         len(route) - 1
@@ -209,13 +202,6 @@ def route_distance(route):
             route[i + 1]["Longitude"]
         )
 
-    total += haversine(
-        route[-1]["Latitude"],
-        route[-1]["Longitude"],
-        OFFICE_LAT,
-        OFFICE_LON
-    )
-
     return total
 
 
@@ -224,20 +210,28 @@ def split_route_by_time(
     max_stops=12
 ):
 
+    if len(route) == 0:
+        return []
+
     days = []
 
     current_day = []
 
     current_minutes = 0
 
-    previous_lat = OFFICE_LAT
-    previous_lon = OFFICE_LON
+    current_day.append(
+        route[0]
+    )
 
-    for stop in route:
+    current_minutes = VISIT_MINUTES
+
+    previous = route[0]
+
+    for stop in route[1:]:
 
         km = haversine(
-            previous_lat,
-            previous_lon,
+            previous["Latitude"],
+            previous["Longitude"],
             stop["Latitude"],
             stop["Longitude"]
         )
@@ -247,27 +241,22 @@ def split_route_by_time(
             AVERAGE_SPEED_KMH
         ) * 60
 
-        stop_minutes = VISIT_MINUTES
-
-        total_needed = (
-            travel_minutes
+        required_minutes = (
+            VISIT_MINUTES
             +
-            stop_minutes
+            travel_minutes
         )
 
         if (
-            current_day
-            and
+            len(current_day) >= max_stops
+            or
             (
                 current_minutes
                 +
-                total_needed
-                >
-                WORKING_DAY_MINUTES
-                or
-                len(current_day)
-                >= max_stops
+                required_minutes
             )
+            >
+            WORKING_DAY_MINUTES
         ):
 
             days.append(
@@ -275,38 +264,17 @@ def split_route_by_time(
             )
 
             current_day = []
-
             current_minutes = 0
-
-            previous_lat = OFFICE_LAT
-            previous_lon = OFFICE_LON
-
-            km = haversine(
-                previous_lat,
-                previous_lon,
-                stop["Latitude"],
-                stop["Longitude"]
-            )
-
-            travel_minutes = (
-                km /
-                AVERAGE_SPEED_KMH
-            ) * 60
-
-            total_needed = (
-                travel_minutes
-                +
-                VISIT_MINUTES
-            )
 
         current_day.append(
             stop
         )
 
-        current_minutes += total_needed
+        current_minutes += (
+            required_minutes
+        )
 
-        previous_lat = stop["Latitude"]
-        previous_lon = stop["Longitude"]
+        previous = stop
 
     if current_day:
 
