@@ -3,6 +3,9 @@ import pandas as pd
 from ortools.constraint_solver import pywrapcp
 from ortools.constraint_solver import routing_enums_pb2
 
+OFFICE_LAT = 6.827512186996366
+OFFICE_LON = 79.95694904907492
+
 VISIT_MINUTES = 15
 WORKING_DAY_MINUTES = 480
 AVERAGE_SPEED_KMH = 40
@@ -74,13 +77,26 @@ def build_distance_matrix(df):
 def solve_tsp(df):
 
     if len(df) <= 1:
+        return df.to_dict("records")
 
-        return df.to_dict(
-            "records"
-        )
+    office_row = {
+        "Customer name": "OFFICE",
+        "Town": "OFFICE",
+        "Latitude": OFFICE_LAT,
+        "Longitude": OFFICE_LON
+    }
+
+    office_df = pd.DataFrame(
+        [office_row]
+    )
+
+    working_df = pd.concat(
+        [office_df, df],
+        ignore_index=True
+    )
 
     distance_matrix = build_distance_matrix(
-        df
+        working_df
     )
 
     manager = pywrapcp.RoutingIndexManager(
@@ -134,19 +150,16 @@ def solve_tsp(df):
         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     )
 
-    search_parameters.time_limit.seconds = 10
+    search_parameters.time_limit.seconds = 20
 
     solution = routing.SolveWithParameters(
         search_parameters
     )
 
     if solution is None:
+        return df.to_dict("records")
 
-        return df.to_dict(
-            "records"
-        )
-
-    route = []
+    ordered_route = []
 
     index = routing.Start(0)
 
@@ -156,23 +169,34 @@ def solve_tsp(df):
             index
         )
 
-        route.append(
-            df.iloc[node].to_dict()
-        )
+        row = working_df.iloc[node]
+
+        if row["Customer name"] != "OFFICE":
+
+            ordered_route.append(
+                row.to_dict()
+            )
 
         index = solution.Value(
             routing.NextVar(index)
         )
 
-    return route
+    return ordered_route
 
 
 def route_distance(route):
 
-    if len(route) < 2:
+    if len(route) == 0:
         return 0
 
     total = 0
+
+    total += haversine(
+        OFFICE_LAT,
+        OFFICE_LON,
+        route[0]["Latitude"],
+        route[0]["Longitude"]
+    )
 
     for i in range(
         len(route) - 1
@@ -184,6 +208,13 @@ def route_distance(route):
             route[i + 1]["Latitude"],
             route[i + 1]["Longitude"]
         )
+
+    total += haversine(
+        route[-1]["Latitude"],
+        route[-1]["Longitude"],
+        OFFICE_LAT,
+        OFFICE_LON
+    )
 
     return total
 
@@ -199,32 +230,29 @@ def split_route_by_time(
 
     current_minutes = 0
 
-    previous = None
+    previous_lat = OFFICE_LAT
+    previous_lon = OFFICE_LON
 
     for stop in route:
 
-        if previous is None:
+        km = haversine(
+            previous_lat,
+            previous_lon,
+            stop["Latitude"],
+            stop["Longitude"]
+        )
 
-            travel_minutes = 0
+        travel_minutes = (
+            km /
+            AVERAGE_SPEED_KMH
+        ) * 60
 
-        else:
-
-            km = haversine(
-                previous["Latitude"],
-                previous["Longitude"],
-                stop["Latitude"],
-                stop["Longitude"]
-            )
-
-            travel_minutes = (
-                km /
-                AVERAGE_SPEED_KMH
-            ) * 60
+        stop_minutes = VISIT_MINUTES
 
         total_needed = (
-            VISIT_MINUTES
-            +
             travel_minutes
+            +
+            stop_minutes
         )
 
         if (
@@ -238,8 +266,7 @@ def split_route_by_time(
                 WORKING_DAY_MINUTES
                 or
                 len(current_day)
-                >=
-                max_stops
+                >= max_stops
             )
         ):
 
@@ -248,18 +275,38 @@ def split_route_by_time(
             )
 
             current_day = []
+
             current_minutes = 0
-            previous = None
+
+            previous_lat = OFFICE_LAT
+            previous_lon = OFFICE_LON
+
+            km = haversine(
+                previous_lat,
+                previous_lon,
+                stop["Latitude"],
+                stop["Longitude"]
+            )
+
+            travel_minutes = (
+                km /
+                AVERAGE_SPEED_KMH
+            ) * 60
+
+            total_needed = (
+                travel_minutes
+                +
+                VISIT_MINUTES
+            )
 
         current_day.append(
             stop
         )
 
-        current_minutes += (
-            total_needed
-        )
+        current_minutes += total_needed
 
-        previous = stop
+        previous_lat = stop["Latitude"]
+        previous_lon = stop["Longitude"]
 
     if current_day:
 
@@ -274,6 +321,9 @@ def build_optimized_plan(
     df,
     max_stops=12
 ):
+
+    if len(df) == 0:
+        return []
 
     ordered_route = solve_tsp(
         df
