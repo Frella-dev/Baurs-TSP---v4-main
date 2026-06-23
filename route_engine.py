@@ -46,12 +46,25 @@ def create_zones(df, n_zones=6):
 
     df = df.copy()
 
+    if df.empty:
+
+        df["Zone"] = pd.Series(
+            dtype=int
+        )
+
+        return df
+
+    n_clusters = min(
+        n_zones,
+        len(df)
+    )
+
     coords = df[
         ["Latitude", "Longitude"]
     ]
 
     kmeans = KMeans(
-        n_clusters=n_zones,
+        n_clusters=n_clusters,
         random_state=42,
         n_init=10
     )
@@ -204,6 +217,8 @@ def split_route_by_distance(
 
             current_day = []
             current_km = 0
+            previous = None
+            leg = 0
 
         current_day.append(
             stop

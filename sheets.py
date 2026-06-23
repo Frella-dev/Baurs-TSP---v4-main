@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+from urllib.parse import parse_qs, urlparse
 
 
 REQUIRED_COLUMNS = [
@@ -35,9 +36,29 @@ def build_csv_url(sheet_url):
         sheet_url
     )
 
+    parsed_url = urlparse(
+        sheet_url
+    )
+
+    query_params = parse_qs(
+        parsed_url.query
+    )
+
+    gid = query_params.get(
+        "gid",
+        [None]
+    )[0]
+
+    gid_part = ""
+
+    if gid:
+
+        gid_part = f"&gid={gid}"
+
     return (
         f"https://docs.google.com/spreadsheets/d/"
         f"{sheet_id}/export?format=csv"
+        f"{gid_part}"
     )
 
 
